@@ -220,9 +220,9 @@ int main(int argc, char *argv[]) {
         for (int j = 0; j < producer_args[i].total_produced; j++) {
             avg_latency += producer_args[i].latencies[j];
         }
-        avg_latency /= 1000000.0; // Convert to milliseconds
+        avg_latency /= 1000.0; // Convert to milliseconds
         total_latency += avg_latency;
-        printf("    Average latency: %.2f ms\n", avg_latency);
+        printf("    Average latency: %.2f us\n", avg_latency);
     }
     printf("Total produced items: %lu\n", total_produced);
     printf("Average latency: %.2f ms\n", total_latency / num_producers);
