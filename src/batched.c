@@ -63,6 +63,7 @@ typedef struct {
     int service_time;
     int num_consumers;
     int batch_size;
+    uint64_t latencies[100000000];
 } consumer_args_t;
 
 /**
@@ -104,25 +105,21 @@ void* producer_thread(void* arg) {
     while ((get_time_ns() - start) / 1000000000 < producer_arg->duration) {
         // usleep(1); // Simulate some work before producing the item
         uint64_t items[128];
+        uint64_t timestamp = get_time_ns();
         for (int i = 0; i < producer_arg->burst; i++) 
-            items[i] = producer_arg->total_produced + i + 1;
+        items[i] = timestamp + i + 1;
 
         uint64_t start_spin = get_time_ns();
         int got = ring_buffer_produce_batch(producer_arg->buffer, (void **)items, producer_arg->burst);
         uint64_t end_spin = get_time_ns();
         producer_arg->total_spin_time += end_spin - start_spin;
         producer_arg->total_produced += got;
-        if (got == 0) {
-            // No item produced yet
-            // printf("Ring buffer length: %lu\n", ring_buffer_count(producer_arg->buffer));
+        if (got == 0)
             continue;
-        }
     }
 
     uint64_t end = get_time_ns();
     producer_arg->total_running_time = end - start;
-    // producer_arg->total_running_time = get_time_ns() - start;
-    // producer_arg->total_service_time = producer_arg->total_running_time - producer_arg->total_spin_time;
     return NULL;
 }
 
@@ -143,7 +140,7 @@ void* consumer_thread(void* arg) {
     printf("Consumer %d duration time: %lu\n", consumer_arg->id, consumer_arg->duration);
 
     while ((get_time_ns() - start) / 1000000000 < consumer_arg->duration) {
-        uint64_t items[32];
+        uint64_t items[64];
 
         uint64_t start_spin = get_time_ns();
         int got = ring_buffer_consume_batch(consumer_arg->buffer, (void **)items, consumer_arg->batch_size);
@@ -157,11 +154,7 @@ void* consumer_thread(void* arg) {
             // simulate service time
             timing_busy_wait_us(consumer_arg->service_time);
 
-            test_item_t item;
-            item.id = items[j];
-            item.consumer_id = consumer_arg->id;
-            item.consume_time = get_time_ns();
-            consumer_arg->items[consumer_arg->total_consumed] = item;
+            consumer_arg->latencies[consumer_arg->total_consumed] = get_time_ns() - items[j];
             consumer_arg->total_consumed += 1;
         }
         consumer_arg->total_spin_time += end_spin - start_spin;
@@ -240,16 +233,7 @@ int main(int argc, char *argv[]) {
         producer_args[i].id = i + 1;
         producer_args[i].core = i % sysconf(_SC_NPROCESSORS_ONLN); // Distribute across available cores
         producer_args[i].total_produced = 0;
-        producer_args[i].items = (test_item_t*)malloc(10000000 * sizeof(test_item_t));
-        if (!producer_args[i].items) {
-            fprintf(stderr, "Failed to allocate memory for producer items\n");
-            ring_buffer_destroy(&buffer);
-            free(producers);
-            free(consumers);
-            free(producer_args);
-            free(consumer_args);
-            return 1;
-        }
+        
         producer_args[i].buffer = &buffer;
         producer_args[i].burst = burst;
         producer_args[i].total_spin_time = 0;
@@ -275,16 +259,6 @@ int main(int argc, char *argv[]) {
         consumer_args[i].id = i + 1;
         consumer_args[i].core = (i + num_producers) % sysconf(_SC_NPROCESSORS_ONLN); // Distribute across available cores
         consumer_args[i].total_consumed = 0;
-        consumer_args[i].items = (test_item_t*)malloc(10000000 * sizeof(test_item_t));
-        if (!consumer_args[i].items) {
-            fprintf(stderr, "Failed to allocate memory for consumer items\n");
-            ring_buffer_destroy(&buffer);
-            free(producers);
-            free(consumers);
-            free(producer_args);
-            free(consumer_args);
-            return 1;
-        }
         consumer_args[i].buffer = &buffer;
         consumer_args[i].total_spin_time = 0;
         consumer_args[i].total_service_time = 0;
@@ -332,6 +306,7 @@ int main(int argc, char *argv[]) {
     uint64_t total_consumed = 0;
     uint64_t total_service_time = 0;
     uint64_t total_spin_time = 0;
+    double total_latency = 0;
     for (int i = 0; i < num_consumers; i++) {
         total_consumed += consumer_args[i].total_consumed;
         total_service_time += consumer_args[i].total_service_time;
@@ -342,6 +317,14 @@ int main(int argc, char *argv[]) {
         printf("    Total running time: %.2f ms\n", consumer_args[i].total_running_time / 1000000.0);
         printf("    Total service time: %.2f ms\n", consumer_args[i].total_service_time / 1000.0);
         printf("    Total spin time: %.2f ms\n", consumer_args[i].total_spin_time / 1000000.0);
+
+        double avg_latency = 0;
+        for (int j = 0; j < consumer_args[i].total_consumed; j++) {
+            avg_latency += consumer_args[i].latencies[j] / consumer_args[i].total_consumed;
+        }
+        avg_latency /= 1000000.0; // Convert to milliseconds
+        total_latency += avg_latency;
+        printf("    Average latency: %.2f ms\n", avg_latency);
     }
 
     printf("\nTotal produced: %lu\n", total_produced);
@@ -349,6 +332,7 @@ int main(int argc, char *argv[]) {
     printf("Difference: %lu\n", total_produced - total_consumed);
     printf("Total service time: %.2f ms\n", total_service_time / 1000.0);
     printf("Total spin time: %.2f ms\n", total_spin_time / 1000000.0);
+    printf("Average latency: %.2f ms\n", total_latency / num_consumers);
 
     // clean up
     for (int i = 0; i < num_producers; i++) {

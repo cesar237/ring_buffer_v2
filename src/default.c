@@ -115,19 +115,15 @@ void* producer_thread(void* arg) {
         uint64_t start_spin = get_time_ns();
         int got = ring_buffer_produce_batch(producer_arg->buffer, (void **)items, producer_arg->burst);
         uint64_t end_spin = get_time_ns();
+
         producer_arg->total_spin_time += end_spin - start_spin;
         producer_arg->total_produced += got;
-        if (got == 0) {
-            // No item produced yet
-            // printf("Ring buffer length: %lu\n", ring_buffer_count(producer_arg->buffer));
+        if (got == 0)
             continue;
-        }
     }
 
     uint64_t end = get_time_ns();
     producer_arg->total_running_time = end - start;
-    // producer_arg->total_running_time = get_time_ns() - start;
-    // producer_arg->total_service_time = producer_arg->total_running_time - producer_arg->total_spin_time;
     return NULL;
 }
 
@@ -149,10 +145,8 @@ void* consumer_thread(void* arg) {
         uint64_t start_spin = get_time_ns();
         uint64_t id = (uint64_t)ring_buffer_consume(consumer_arg->buffer);
         uint64_t end_spin = get_time_ns();
-        if (id == 0) {
-            // No item produced yet
+        if (id == 0)
             continue;
-        }
 
         // simulate service time
         timing_busy_wait_us(consumer_arg->service_time);
@@ -203,10 +197,6 @@ int main(int argc, char *argv[]) {
     printf("  Duration: %d\n", duration);
     printf("  Burst: %d\n", burst);
 
-    // uint64_t duration_ns = duration * 1000000000; // Convert to nanoseconds
-    // //prin duration_ns
-    // printf("Duration in nanoseconds: %lu\n", duration_ns);
-    
     ring_buffer_t buffer;
     if (!ring_buffer_init_batch(&buffer, DEFAULT_BUFFER_SIZE, sizeof(test_item_t), burst)) {
         fprintf(stderr, "Failed to initialize ring buffer\n");
@@ -233,16 +223,6 @@ int main(int argc, char *argv[]) {
         producer_args[i].id = i + 1;
         producer_args[i].core = i % sysconf(_SC_NPROCESSORS_ONLN); // Distribute across available cores
         producer_args[i].total_produced = 0;
-        producer_args[i].items = (test_item_t*)malloc(10000000 * sizeof(test_item_t));
-        if (!producer_args[i].items) {
-            fprintf(stderr, "Failed to allocate memory for producer items\n");
-            ring_buffer_destroy(&buffer);
-            free(producers);
-            free(consumers);
-            free(producer_args);
-            free(consumer_args);
-            return 1;
-        }
         producer_args[i].buffer = &buffer;
         producer_args[i].burst = burst;
         producer_args[i].total_spin_time = 0;
@@ -268,16 +248,6 @@ int main(int argc, char *argv[]) {
         consumer_args[i].id = i + 1;
         consumer_args[i].core = (i + num_producers) % sysconf(_SC_NPROCESSORS_ONLN); // Distribute across available cores
         consumer_args[i].total_consumed = 0;
-        consumer_args[i].items = (test_item_t*)malloc(10000000 * sizeof(test_item_t));
-        if (!consumer_args[i].items) {
-            fprintf(stderr, "Failed to allocate memory for consumer items\n");
-            ring_buffer_destroy(&buffer);
-            free(producers);
-            free(consumers);
-            free(producer_args);
-            free(consumer_args);
-            return 1;
-        }
         consumer_args[i].buffer = &buffer;
         consumer_args[i].total_spin_time = 0;
         consumer_args[i].total_service_time = 0;

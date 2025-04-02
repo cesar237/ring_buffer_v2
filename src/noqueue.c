@@ -52,6 +52,7 @@ typedef struct {
     uint64_t duration;
     int burst;
     int service_time;
+    uint64_t latencies[100000000];
 } producer_args_t;
 
 typedef struct {
@@ -109,18 +110,17 @@ void* producer_thread(void* arg) {
     while ((get_time_ns() - start) / 1000000000 < producer_arg->duration) {
         // usleep(1); // Simulate some work before producing the item
         uint64_t items[128];
+        uint64_t timestamp = get_time_ns();
         for (int i = 0; i < producer_arg->burst; i++) {
-            items[i] = producer_arg->total_produced + i + 1;
+            items[i] = timestamp + i + 1;
             timing_busy_wait_us(producer_arg->service_time);
+            producer_arg->latencies[producer_arg->total_produced] = get_time_ns() - items[i]; 
+            producer_arg->total_produced += 1;
         }
-            
-        producer_arg->total_produced += producer_arg->burst;
     }
 
     uint64_t end = get_time_ns();
     producer_arg->total_running_time = end - start;
-    // producer_arg->total_running_time = get_time_ns() - start;
-    // producer_arg->total_service_time = producer_arg->total_running_time - producer_arg->total_spin_time;
     return NULL;
 }
 
@@ -179,14 +179,6 @@ int main(int argc, char *argv[]) {
         producer_args[i].id = i + 1;
         producer_args[i].core = i % sysconf(_SC_NPROCESSORS_ONLN); // Distribute across available cores
         producer_args[i].total_produced = 0;
-        producer_args[i].items = (test_item_t*)malloc(10000000 * sizeof(test_item_t));
-        if (!producer_args[i].items) {
-            fprintf(stderr, "Failed to allocate memory for producer items\n");
-            // ring_buffer_destroy(&buffer);
-            free(producers);
-            free(producer_args);
-            return 1;
-        }
         // producer_args[i].buffer = &buffer;
         producer_args[i].service_time = service_time;
         producer_args[i].burst = burst;
@@ -215,6 +207,7 @@ int main(int argc, char *argv[]) {
     // Print statistics
     printf("Producer Statistics:\n");
     uint64_t total_produced = 0;
+    double total_latency = 0;
     for (int i = 0; i < num_producers; i++) {
         total_produced += producer_args[i].total_produced;
         printf("  Producer %d:\n", producer_args[i].id);
@@ -222,8 +215,17 @@ int main(int argc, char *argv[]) {
         printf("    Total running time: %.2f ms\n", producer_args[i].total_running_time  / 1000000.0);
         printf("    Total service time: %.2f ms\n", producer_args[i].total_service_time / 1000.0);
         printf("    Total spin time: %.2f ms\n", producer_args[i].total_spin_time / 1000000.0);
+
+        double avg_latency = 0;
+        for (int j = 0; j < producer_args[i].total_produced; j++) {
+            avg_latency += producer_args[i].latencies[j];
+        }
+        avg_latency /= 1000000.0; // Convert to milliseconds
+        total_latency += avg_latency;
+        printf("    Average latency: %.2f ms\n", avg_latency);
     }
     printf("Total produced items: %lu\n", total_produced);
+    printf("Average latency: %.2f ms\n", total_latency / num_producers);
 
     // clean up
     for (int i = 0; i < num_producers; i++) {
