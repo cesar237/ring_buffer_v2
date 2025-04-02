@@ -51,6 +51,7 @@ typedef struct {
     int num_producers;
     uint64_t duration;
     int burst;
+    int service_time;
 } producer_args_t;
 
 typedef struct {
@@ -117,55 +118,21 @@ void* producer_thread(void* arg) {
             item.consume_time = -1;
 
             // Try to produce the item
-            ring_buffer_produce(producer_arg->buffer, (void *)item.id);
+            // ring_buffer_produce(producer_arg->buffer, (void *)item.id);
+
+            // simulate service time
+            timing_busy_wait_us(producer_arg->service_time);
 
             // producer_arg->items[producer_arg->total_produced] = item;
             producer_arg->total_produced += 1;
+            producer_arg->total_service_time += producer_arg->service_time;
         }
     }
     producer_arg->total_running_time = get_time_ns() - start;
-    producer_arg->total_service_time = producer_arg->total_running_time - producer_arg->total_spin_time;
+    // producer_arg->total_service_time = producer_arg->total_running_time - producer_arg->total_spin_time;
     return NULL;
 }
 
-
-/**
-* Consumer thread function
-*/
-void* consumer_thread(void* arg) {
-    consumer_args_t* consumer_arg = (consumer_args_t*)arg;
-
-    if (consumer_arg->pin_thread && !pin_thread_to_core(consumer_arg->core))
-        return NULL;
-
-    // For the duration of the simulation, consume items
-    uint64_t start = get_time_ns();
-    // uint64_t end = start + consumer_arg->duration;
-
-    while ((get_time_ns() - start) / 1000000000 < consumer_arg->duration) {
-        test_item_t item;
-        uint64_t start_spin = get_time_ns();
-        uint64_t id = (uint64_t)ring_buffer_consume(consumer_arg->buffer);
-        uint64_t end_spin = get_time_ns();
-        if (id == 0) {
-            // No item produced yet
-            continue;
-        }
-
-        // simulate service time
-        timing_busy_wait_us(consumer_arg->service_time);
-
-        item.id = id;
-        item.consumer_id = consumer_arg->id;
-        item.consume_time = get_time_ns();
-        consumer_arg->items[consumer_arg->total_consumed] = item;
-        consumer_arg->total_consumed += 1;
-        consumer_arg->total_spin_time += end_spin - start_spin;
-        consumer_arg->total_service_time += consumer_arg->service_time;
-    }
-    consumer_arg->total_running_time = (get_time_ns() - start);
-    return NULL;
-}
 
 int main(int argc, char *argv[]) {
     int num_producers = DEFAULT_NUM_PRODUCERS;
@@ -204,28 +171,14 @@ int main(int argc, char *argv[]) {
     printf("  Duration: %d\n", duration);
     printf("  Burst: %d\n", burst);
 
-    // uint64_t duration_ns = duration * 1000000000; // Convert to nanoseconds
-    // //prin duration_ns
-    // printf("Duration in nanoseconds: %lu\n", duration_ns);
-    
-    ring_buffer_t buffer;
-    if (!ring_buffer_init_batch(&buffer, DEFAULT_BUFFER_SIZE, sizeof(test_item_t), burst)) {
-        fprintf(stderr, "Failed to initialize ring buffer\n");
-        return 1;
-    }
     // Allocate memory for producer and consumer threads    
     pthread_t* producers = (pthread_t*)malloc(num_producers * sizeof(pthread_t));
-    pthread_t* consumers = (pthread_t*)malloc(num_consumers * sizeof(pthread_t));
     producer_args_t* producer_args = (producer_args_t*)malloc(num_producers * sizeof(producer_args_t));
-    consumer_args_t* consumer_args = (consumer_args_t*)malloc(num_consumers * sizeof(consumer_args_t));
     
-    if (!producers || !consumers || !producer_args || !consumer_args) {
+    if (!producers || !producer_args ) {
         fprintf(stderr, "Failed to allocate memory for threads\n");
-        ring_buffer_destroy(&buffer);
         free(producers);
-        free(consumers);
         free(producer_args);
-        free(consumer_args);
         return 1;
     }
 
@@ -237,14 +190,13 @@ int main(int argc, char *argv[]) {
         producer_args[i].items = (test_item_t*)malloc(10000000 * sizeof(test_item_t));
         if (!producer_args[i].items) {
             fprintf(stderr, "Failed to allocate memory for producer items\n");
-            ring_buffer_destroy(&buffer);
+            // ring_buffer_destroy(&buffer);
             free(producers);
-            free(consumers);
             free(producer_args);
-            free(consumer_args);
             return 1;
         }
-        producer_args[i].buffer = &buffer;
+        // producer_args[i].buffer = &buffer;
+        producer_args[i].service_time = service_time;
         producer_args[i].burst = burst;
         producer_args[i].total_spin_time = 0;
         producer_args[i].total_service_time = 0;
@@ -255,46 +207,9 @@ int main(int argc, char *argv[]) {
 
         if (pthread_create(&producers[i], NULL, producer_thread, &producer_args[i]) != 0) {
             fprintf(stderr, "Failed to create producer thread %d\n", i + 1);
-            ring_buffer_destroy(&buffer);
+            // ring_buffer_destroy(&buffer);
             free(producers);
-            free(consumers);
             free(producer_args);
-            free(consumer_args);
-            return 1;
-        }
-    }
-    
-    // Create consumer threads
-    for (int i = 0; i < num_consumers; i++) {
-        consumer_args[i].id = i + 1;
-        consumer_args[i].core = (i + num_producers) % sysconf(_SC_NPROCESSORS_ONLN); // Distribute across available cores
-        consumer_args[i].total_consumed = 0;
-        consumer_args[i].items = (test_item_t*)malloc(10000000 * sizeof(test_item_t));
-        if (!consumer_args[i].items) {
-            fprintf(stderr, "Failed to allocate memory for consumer items\n");
-            ring_buffer_destroy(&buffer);
-            free(producers);
-            free(consumers);
-            free(producer_args);
-            free(consumer_args);
-            return 1;
-        }
-        consumer_args[i].buffer = &buffer;
-        consumer_args[i].total_spin_time = 0;
-        consumer_args[i].total_service_time = 0;
-        consumer_args[i].total_running_time = 0;
-        consumer_args[i].service_time = service_time;
-        consumer_args[i].num_consumers = num_consumers;
-        consumer_args[i].duration = duration;
-        consumer_args[i].pin_thread = PIN_THREADS; // Pin thread to core
-
-        if (pthread_create(&consumers[i], NULL, consumer_thread, &consumer_args[i]) != 0) {
-            fprintf(stderr, "Failed to create consumer thread %d\n", i + 1);
-            ring_buffer_destroy(&buffer);
-            free(producers);
-            free(consumers);
-            free(producer_args);
-            free(consumer_args);
             return 1;
         }
     }
@@ -304,12 +219,6 @@ int main(int argc, char *argv[]) {
         pthread_join(producers[i], NULL);
         printf("Producer %d finished\n", i + 1);
     }
-    
-    // Wait for consumer threads to finish
-    for (int i = 0; i < num_consumers; i++) {
-        pthread_join(consumers[i], NULL);
-        printf("Consumer %d finished\n", i + 1);
-    }
 
     // Print statistics
     printf("Producer Statistics:\n");
@@ -318,45 +227,17 @@ int main(int argc, char *argv[]) {
         total_produced += producer_args[i].total_produced;
         printf("  Producer %d:\n", producer_args[i].id);
         printf("    Total produced: %d\n", producer_args[i].total_produced);
-        printf("    Total running time: %lu ns\n", producer_args[i].total_running_time);
-        printf("    Total service time: %lu ns\n", producer_args[i].total_service_time);
-        printf("    Total spin time: %lu ns\n", producer_args[i].total_spin_time);
+        printf("    Total running time: %.2f ms\n", producer_args[i].total_running_time  / 1000000.0);
+        printf("    Total service time: %.2f ms\n", producer_args[i].total_service_time / 1000.0);
+        printf("    Total spin time: %.2f ms\n", producer_args[i].total_spin_time / 1000000.0);
     }
-
-    printf("Consumer Statistics in second:\n");
-    uint64_t total_consumed = 0;
-    uint64_t total_service_time = 0;
-    uint64_t total_spin_time = 0;
-    for (int i = 0; i < num_consumers; i++) {
-        total_consumed += consumer_args[i].total_consumed;
-        total_service_time += consumer_args[i].total_service_time;
-        total_spin_time += consumer_args[i].total_spin_time;
-
-        printf("  Consumer %d:\n", consumer_args[i].id);
-        printf("    Total consumed: %d\n", consumer_args[i].total_consumed);
-        printf("    Total running time: %.2f ms\n", consumer_args[i].total_running_time / 1000000.0);
-        printf("    Total service time: %.2f ms\n", consumer_args[i].total_service_time / 1000.0);
-        printf("    Total spin time: %.2f ms\n", consumer_args[i].total_spin_time / 1000000.0);
-    }
-
-    printf("\nTotal produced: %lu\n", total_produced);
-    printf("Total consumed: %lu\n", total_consumed);
-    printf("Difference: %lu\n", total_produced - total_consumed);
-    printf("Total service time: %.2f ms\n", total_service_time / 1000.0);
-    printf("Total spin time: %.2f ms\n", total_spin_time / 1000000.0);
 
     // clean up
     for (int i = 0; i < num_producers; i++) {
         free(producer_args[i].items);
     }
-    for (int i = 0; i < num_consumers; i++) {
-        free(consumer_args[i].items);
-    }
     free(producers);
-    free(consumers);
     free(producer_args);
-    free(consumer_args);
-    ring_buffer_destroy(&buffer);
 
     return 0;
 }

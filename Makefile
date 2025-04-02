@@ -21,6 +21,7 @@ BIN_DIR = bin
 DEFAULT_TARGET = $(BIN_DIR)/default_program
 BATCHED_TARGET = $(BIN_DIR)/batched_program
 MULTI_TARGET = $(BIN_DIR)/multi_program
+NORB_TARGET = $(BIN_DIR)/norb_program
 
 # Source files
 DEFAULT_SRCS = $(SRC_DIR)/default.c \
@@ -32,10 +33,14 @@ BATCHED_SRCS = $(SRC_DIR)/batched.c \
 MULTI_SRCS = $(SRC_DIR)/multiqueue.c \
                $(SRC_DIR)/timing.c
 
+NORB_SRCS = $(SRC_DIR)/noqueue.c \
+               $(SRC_DIR)/timing.c
+
 # Object files
 DEFAULT_OBJS = $(DEFAULT_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 BATCHED_OBJS = $(BATCHED_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 MULTI_OBJS 	 = $(MULTI_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
+NORB_OBJS 	 = $(NORB_SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 
 # Header files
 HEADERS = $(SRC_DIR)/ring_buffer.h \
@@ -45,7 +50,7 @@ HEADERS = $(SRC_DIR)/ring_buffer.h \
 $(shell mkdir -p $(OBJ_DIR) $(BIN_DIR))
 
 # Default target builds both executables
-all: $(DEFAULT_TARGET) $(BATCHED_TARGET) $(MULTI_TARGET)
+all: $(DEFAULT_TARGET) $(BATCHED_TARGET) $(MULTI_TARGET) $(NORB_TARGET)
 
 # Rule to build the default executable
 $(DEFAULT_TARGET): $(DEFAULT_OBJS)
@@ -59,6 +64,10 @@ $(BATCHED_TARGET): $(BATCHED_OBJS)
 $(MULTI_TARGET): $(MULTI_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
+# Rule to build the multiqueue executable
+$(NORB_TARGET): $(NORB_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^
+
 # Rule to compile source files into object files
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(HEADERS)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -68,7 +77,7 @@ clean:
 	rm -rf $(OBJ_DIR) $(BIN_DIR)
 
 # Phony targets
-.PHONY: all clean run_default run_batched run_multi debug_default debug_batched debug_multi
+.PHONY: all clean run_default run_batched run_multi run_norb debug_default debug_batched debug_multi debug_norb
 
 # Run the default executable
 run_default: $(DEFAULT_TARGET)
@@ -82,6 +91,10 @@ run_batched: $(BATCHED_TARGET)
 run_multi: $(MULTI_TARGET)
 	$(MULTI_TARGET)
 
+# Run the noqueue executable
+run_norb: $(NORB_TARGET)
+	$(NORB_TARGET)
+
 # Debug the default executable with gdb
 debug_default: $(DEFAULT_TARGET)
 	gdb $(DEFAULT_TARGET)
@@ -93,3 +106,7 @@ debug_batched: $(BATCHED_TARGET)
 # Debug the multi executable with gdb
 debug_multi: $(MULTI_TARGET)
 	gdb $(MULTI_TARGET)
+
+# Debug the noqueue executable with gdb
+debug_norb: $(NORB_TARGET)
+	gdb $(NORB_TARGET)
