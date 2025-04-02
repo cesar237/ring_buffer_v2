@@ -339,7 +339,7 @@ int main(int argc, char *argv[]) {
     printf("Difference: %lu\n", total_produced - total_consumed);
     printf("Total service time: %.2f ms\n", total_service_time / 1000.0);
     printf("Total spin time: %.2f ms\n", total_spin_time / 1000000.0);
-    printf("Average latency: %.2f ms\n", total_latency / num_consumers);
+    printf("Average latency: %.2f us\n", total_latency / num_consumers);
 
     // clean up
     for (int i = 0; i < num_producers; i++) {

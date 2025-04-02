@@ -225,7 +225,7 @@ int main(int argc, char *argv[]) {
         printf("    Average latency: %.2f us\n", avg_latency);
     }
     printf("Total produced items: %lu\n", total_produced);
-    printf("Average latency: %.2f ms\n", total_latency / num_producers);
+    printf("Average latency: %.2f us\n", total_latency / num_producers);
 
     // clean up
     for (int i = 0; i < num_producers; i++) {
