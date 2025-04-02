@@ -96,6 +96,7 @@ bool pin_thread_to_core(int core_id) {
     return true;
 }
 
+
 void* producer_thread(void* arg) {
     producer_args_t* producer_arg = (producer_args_t*)arg;
 
@@ -107,31 +108,22 @@ void* producer_thread(void* arg) {
 
     while ((get_time_ns() - start) / 1000000000 < producer_arg->duration) {
         // usleep(1); // Simulate some work before producing the item
-        // Try to produce the item
+        uint64_t items[128];
         for (int i = 0; i < producer_arg->burst; i++) {
-            // Create item
-            test_item_t item;
-            item.producer_id = producer_arg->id;
-            item.consumer_id = -1; // Not consumed yet
-            item.id = producer_arg->total_produced + 1;
-            item.produce_time = get_time_ns();
-            item.consume_time = -1;
-
-            // Try to produce the item
-            // ring_buffer_produce(producer_arg->buffer, (void *)item.id);
-
-            // simulate service time
+            items[i] = producer_arg->total_produced + i + 1;
             timing_busy_wait_us(producer_arg->service_time);
-
-            // producer_arg->items[producer_arg->total_produced] = item;
-            producer_arg->total_produced += 1;
-            producer_arg->total_service_time += producer_arg->service_time;
         }
+            
+        producer_arg->total_produced += producer_arg->burst;
     }
-    producer_arg->total_running_time = get_time_ns() - start;
+
+    uint64_t end = get_time_ns();
+    producer_arg->total_running_time = end - start;
+    // producer_arg->total_running_time = get_time_ns() - start;
     // producer_arg->total_service_time = producer_arg->total_running_time - producer_arg->total_spin_time;
     return NULL;
 }
+
 
 
 int main(int argc, char *argv[]) {

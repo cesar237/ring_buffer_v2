@@ -215,29 +215,22 @@ uint64_t ring_buffer_consumer_wait_count(const ring_buffer_t *rb) {
 * @param batch_size Number of elements to process in a batch
 * @return Number of items enqueued
 */
-int ring_buffer_produce_batch(ring_buffer_t *rb, void *item, int batch_size) {
+int ring_buffer_produce_batch(ring_buffer_t *rb, void **items, int num_items) {
     int total_produced = 0;
 
     // Update producer waits before acquiring the lock
-    rb->producer_waits += spinlock_get_waiting(&rb->produce_lock);
     spinlock_lock(&rb->produce_lock);
 
-    while (!ring_buffer_is_full(rb)) {
+    while (!ring_buffer_is_full(rb) && total_produced < num_items) {
         // Store the item
         size_t index = rb->head & rb->mask;
-        rb->buffer[index] = item;
-        if (rb->buffer[index]) {
-            // Memory barrier to ensure the item is written before updating head
-            __sync_synchronize();
-            
-            // Update head
-            rb->head = (rb->head + 1) & rb->mask;
-            
-            total_produced++;
-            if (total_produced >= batch_size) {
-                break;
-            }
-        }
+        rb->buffer[index] = items[total_produced];
+        // Memory barrier to ensure the item is written before updating head
+        __sync_synchronize();
+        
+        // Update head
+        rb->head = (rb->head + 1) & rb->mask;
+        total_produced++;
     }
 
     spinlock_unlock(&rb->produce_lock);
@@ -253,7 +246,31 @@ int ring_buffer_produce_batch(ring_buffer_t *rb, void *item, int batch_size) {
 * @return true if successful, false otherwise
 */
 bool ring_buffer_produce(ring_buffer_t *rb, void* item) {
-    return ring_buffer_produce_batch(rb, item, 1) == 1;
+
+    // Update producer waits before acquiring the lock
+    // rb->producer_waits += spinlock_get_waiting(&rb->produce_lock);
+    spinlock_lock(&rb->produce_lock);
+
+    if (ring_buffer_is_full(rb)) {
+        // Buffer is full, cannot produce
+        spinlock_unlock(&rb->produce_lock);
+        return false;
+    }
+
+    // Store the item
+    size_t index = rb->head & rb->mask;
+    rb->buffer[index] = item;
+    if (rb->buffer[index]) {
+        // Memory barrier to ensure the item is written before updating head
+        __sync_synchronize();
+        
+        // Update head
+        rb->head = (rb->head + 1) & rb->mask;
+    }
+    // Memory barrier to ensure all writes are complete before unlocking
+    __sync_synchronize();
+    spinlock_unlock(&rb->produce_lock);
+    return true;
 }
 
 /**
@@ -268,10 +285,10 @@ int ring_buffer_consume_batch(ring_buffer_t *rb, void **items_array, int max_ite
     int items_consumed = 0;
     
     // Update consumer waits before acquiring the lock
-    rb->consumer_waits += spinlock_get_waiting(&rb->consume_lock);
+    // rb->consumer_waits += spinlock_get_waiting(&rb->consume_lock);
     spinlock_lock(&rb->consume_lock);
     
-    uint64_t start = get_time_ns();
+    // uint64_t start = get_time_ns();
     // Process up to max_items or until the buffer is empty
     while (items_consumed < max_items && !ring_buffer_is_empty(rb)) {
         // Get the item from the current tail position
@@ -290,15 +307,15 @@ int ring_buffer_consume_batch(ring_buffer_t *rb, void **items_array, int max_ite
     if (items_consumed > 0) {
         __sync_synchronize();
     }
-    uint64_t end = get_time_ns();
+    // uint64_t end = get_time_ns();
     spinlock_unlock(&rb->consume_lock);
     
-    int nr_access_time = atomic_load(&rb->nr_access_time);
-    int access_time = atomic_load(&rb->access_time);
+    // int nr_access_time = atomic_load(&rb->nr_access_time);
+    // int access_time = atomic_load(&rb->access_time);
 
-    access_time = (access_time * nr_access_time + end - start) / (nr_access_time + 1);
-    atomic_store(&rb->access_time, access_time);
-    atomic_fetch_add(&rb->nr_access_time, 1);
+    // access_time = (access_time * nr_access_time + end - start) / (nr_access_time + 1);
+    // atomic_store(&rb->access_time, access_time);
+    // atomic_fetch_add(&rb->nr_access_time, 1);
 
     return items_consumed;
 }

@@ -109,25 +109,28 @@ void* producer_thread(void* arg) {
 
     while ((get_time_ns() - start) / 1000000000 < producer_arg->duration) {
         // usleep(1); // Simulate some work before producing the item
-        // Try to produce the item
-        for (int i = 0; i < producer_arg->burst; i++) {
-            // Create item
-            test_item_t item;
-            item.producer_id = producer_arg->id;
-            item.id = producer_arg->total_produced + 1;
-            item.produce_time = get_time_ns();
+        uint64_t items[128];
+        for (int i = 0; i < producer_arg->burst; i++) 
+            items[i] = producer_arg->total_produced + i + 1;
 
-            // Try to produce the item
-            ring_buffer_produce(&producer_arg->buffers[ring], (void *)item.id);
-            ring = (ring + 1) % producer_arg->nr_rings;
+        uint64_t start_spin = get_time_ns();
+        int got = ring_buffer_produce_batch(&producer_arg->buffers[ring], (void **)items, producer_arg->burst);
+        uint64_t end_spin = get_time_ns();
 
-            // printf("Total produced: %d\n", producer_arg->total_produced);
-            // producer_arg->items[producer_arg->total_produced] = item;
-            producer_arg->total_produced += 1;
+        ring = (ring + 1) % producer_arg->nr_rings;
+        producer_arg->total_spin_time += end_spin - start_spin;
+        producer_arg->total_produced += got;
+        if (got == 0) {
+            // No item produced yet
+            // printf("Ring buffer length: %lu\n", ring_buffer_count(producer_arg->buffer));
+            continue;
         }
     }
-    producer_arg->total_running_time = get_time_ns() - start;
-    producer_arg->total_service_time = producer_arg->total_running_time - producer_arg->total_spin_time;
+
+    uint64_t end = get_time_ns();
+    producer_arg->total_running_time = end - start;
+    // producer_arg->total_running_time = get_time_ns() - start;
+    // producer_arg->total_service_time = producer_arg->total_running_time - producer_arg->total_spin_time;
     return NULL;
 }
 

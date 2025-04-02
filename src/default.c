@@ -16,7 +16,7 @@
 #include <math.h>
 
 // Default values
-#define DEFAULT_BUFFER_SIZE 1024
+#define DEFAULT_BUFFER_SIZE 4096
 #define DEFAULT_NUM_PRODUCERS 1
 #define DEFAULT_NUM_CONSUMERS 4
 #define DEFAULT_SERVICE_TIME 10
@@ -106,25 +106,26 @@ void* producer_thread(void* arg) {
 
     while ((get_time_ns() - start) / 1000000000 < producer_arg->duration) {
         // usleep(1); // Simulate some work before producing the item
-        // Try to produce the item
-        for (int i = 0; i < producer_arg->burst; i++) {
-            // Create item
-            test_item_t item;
-            item.producer_id = producer_arg->id;
-            item.consumer_id = -1; // Not consumed yet
-            item.id = producer_arg->total_produced + 1;
-            item.produce_time = get_time_ns();
-            item.consume_time = -1;
+        uint64_t items[128];
+        for (int i = 0; i < producer_arg->burst; i++) 
+            items[i] = producer_arg->total_produced + i + 1;
 
-            // Try to produce the item
-            ring_buffer_produce(producer_arg->buffer, (void *)item.id);
-
-            // producer_arg->items[producer_arg->total_produced] = item;
-            producer_arg->total_produced += 1;
+        uint64_t start_spin = get_time_ns();
+        int got = ring_buffer_produce_batch(producer_arg->buffer, (void **)items, producer_arg->burst);
+        uint64_t end_spin = get_time_ns();
+        producer_arg->total_spin_time += end_spin - start_spin;
+        producer_arg->total_produced += got;
+        if (got == 0) {
+            // No item produced yet
+            // printf("Ring buffer length: %lu\n", ring_buffer_count(producer_arg->buffer));
+            continue;
         }
     }
-    producer_arg->total_running_time = get_time_ns() - start;
-    producer_arg->total_service_time = producer_arg->total_running_time - producer_arg->total_spin_time;
+
+    uint64_t end = get_time_ns();
+    producer_arg->total_running_time = end - start;
+    // producer_arg->total_running_time = get_time_ns() - start;
+    // producer_arg->total_service_time = producer_arg->total_running_time - producer_arg->total_spin_time;
     return NULL;
 }
 
@@ -318,9 +319,9 @@ int main(int argc, char *argv[]) {
         total_produced += producer_args[i].total_produced;
         printf("  Producer %d:\n", producer_args[i].id);
         printf("    Total produced: %d\n", producer_args[i].total_produced);
-        printf("    Total running time: %lu ns\n", producer_args[i].total_running_time);
+        printf("    Total running time: %.2f mss\n", producer_args[i].total_running_time / 1000000.0);
         printf("    Total service time: %lu ns\n", producer_args[i].total_service_time);
-        printf("    Total spin time: %lu ns\n", producer_args[i].total_spin_time);
+        printf("    Total spin time: %.2f ms\n", producer_args[i].total_spin_time / 1000000.0);
     }
 
     printf("Consumer Statistics in second:\n");
