@@ -26,4 +26,4 @@ done
 
 # Bench noqueue 
 echo "Running noqueue benchmark..."
-./bin/noqueue_program -b 1 -p 17 -s $service_time -c 17 > results/noqueue.csv
+./bin/norb_program -b 1 -p 17 -s $service_time -c 17 > results/noqueue.csv
