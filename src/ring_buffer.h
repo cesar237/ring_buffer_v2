@@ -224,7 +224,8 @@ int ring_buffer_produce_batch(ring_buffer_t *rb, void **items, int num_items) {
     while (!ring_buffer_is_full(rb) && total_produced < num_items) {
         // Store the item
         size_t index = rb->head & rb->mask;
-        rb->buffer[index] = items[total_produced];
+        // rb->buffer[index] = items[total_produced];
+        rb->buffer[index] = (void*)get_time_ns();
         // Memory barrier to ensure the item is written before updating head
         __sync_synchronize();
         

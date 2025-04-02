@@ -113,7 +113,7 @@ void* producer_thread(void* arg) {
         uint64_t items[128];
         uint64_t timestamp = get_time_ns();
         for (int i = 0; i < producer_arg->burst; i++) 
-            items[i] = timestamp + i + 1;
+            items[i] = timestamp + i;
 
         uint64_t start_spin = get_time_ns();
         int got = ring_buffer_produce_batch(&producer_arg->buffers[ring], (void **)items, producer_arg->burst);
