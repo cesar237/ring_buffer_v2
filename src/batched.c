@@ -22,7 +22,7 @@
 #define DEFAULT_SERVICE_TIME 10
 #define DEFAULT_DURATION 10
 #define BURST 1
-#define PIN_THREADS false
+#define PIN_THREADS true
 #define DEFAULT_BATCH_SIZE 1
 
 
