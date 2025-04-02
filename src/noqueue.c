@@ -42,7 +42,7 @@ typedef struct {
     int id;
     bool pin_thread;
     int core;
-    int total_produced;
+    uint64_t total_produced;
     test_item_t *items;
     ring_buffer_t *buffer;
     uint64_t total_spin_time;
@@ -154,14 +154,6 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-    
-    // Just printing to verify the parsed values
-    printf("Configuration:\n");
-    printf("  Number of producers: %d\n", num_producers);
-    printf("  Number of consumers: %d\n", num_consumers);
-    printf("  Service time: %d\n", service_time);
-    printf("  Duration: %d\n", duration);
-    printf("  Burst: %d\n", burst);
 
     // Allocate memory for producer and consumer threads    
     pthread_t* producers = (pthread_t*)malloc(num_producers * sizeof(pthread_t));
@@ -201,32 +193,22 @@ int main(int argc, char *argv[]) {
     // Wait for producer threads to finish
     for (int i = 0; i < num_producers; i++) {
         pthread_join(producers[i], NULL);
-        printf("Producer %d finished\n", i + 1);
     }
 
-    // Print statistics
-    printf("Producer Statistics:\n");
-    uint64_t total_produced = 0;
-    double total_latency = 0;
+    #define SAMPLES 1000
     for (int i = 0; i < num_producers; i++) {
-        total_produced += producer_args[i].total_produced;
-        printf("  Producer %d:\n", producer_args[i].id);
-        printf("    Total produced: %d\n", producer_args[i].total_produced);
-        printf("    Total running time: %.2f ms\n", producer_args[i].total_running_time  / 1000000.0);
-        printf("    Total service time: %.2f ms\n", producer_args[i].total_service_time / 1000.0);
-        printf("    Total spin time: %.2f ms\n", producer_args[i].total_spin_time / 1000000.0);
 
-        double avg_latency = 0;
-        for (int j = 0; j < producer_args[i].total_produced; j++) {
-            avg_latency += producer_args[i].latencies[j];
+        for (uint64_t j = 0; j < producer_args[i].total_produced; j++) {
+            if (j % SAMPLES == 0) 
+                printf("%d,%lu,%lu,%lu,%lu,%lu\n",
+                    producer_args[i].id,
+                    producer_args[i].total_produced,
+                    producer_args[i].total_produced,
+                    producer_args[i].total_spin_time,
+                    producer_args[i].total_running_time,
+                    producer_args[i].latencies[j]);
         }
-        avg_latency /= producer_args[i].total_produced;
-        avg_latency /= 1000.0;
-        total_latency += avg_latency;
-        printf("    Average latency: %.2f us\n", avg_latency);
     }
-    printf("Total produced items: %lu\n", total_produced);
-    printf("Average latency: %.2f us\n", total_latency / num_producers);
 
     // clean up
     for (int i = 0; i < num_producers; i++) {

@@ -42,7 +42,7 @@ typedef struct {
     int id;
     bool pin_thread;
     int core;
-    int total_produced;
+    uint64_t total_produced;
     test_item_t *items;
     ring_buffer_t *buffer;
     uint64_t total_spin_time;
@@ -57,7 +57,7 @@ typedef struct {
     int id;
     bool pin_thread;
     int core;
-    int total_consumed;
+    uint64_t total_consumed;
     test_item_t *items;
     ring_buffer_t *buffer;
     uint64_t duration;
@@ -188,14 +188,6 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-    
-    // Just printing to verify the parsed values
-    printf("Configuration:\n");
-    printf("  Number of producers: %d\n", num_producers);
-    printf("  Number of consumers: %d\n", num_consumers);
-    printf("  Service time: %d\n", service_time);
-    printf("  Duration: %d\n", duration);
-    printf("  Burst: %d\n", burst);
 
     ring_buffer_t buffer;
     if (!ring_buffer_init_batch(&buffer, DEFAULT_BUFFER_SIZE, sizeof(test_item_t), burst)) {
@@ -271,59 +263,33 @@ int main(int argc, char *argv[]) {
     // Wait for producer threads to finish
     for (int i = 0; i < num_producers; i++) {
         pthread_join(producers[i], NULL);
-        printf("Producer %d finished\n", i + 1);
     }
     
     // Wait for consumer threads to finish
     for (int i = 0; i < num_consumers; i++) {
         pthread_join(consumers[i], NULL);
-        printf("Consumer %d finished\n", i + 1);
     }
 
-    // Print statistics
-    printf("Producer Statistics:\n");
+#define SAMPLES 1000
+
     uint64_t total_produced = 0;
     for (int i = 0; i < num_producers; i++) {
         total_produced += producer_args[i].total_produced;
-        printf("  Producer %d:\n", producer_args[i].id);
-        printf("    Total produced: %d\n", producer_args[i].total_produced);
-        printf("    Total running time: %.2f mss\n", producer_args[i].total_running_time / 1000000.0);
-        printf("    Total service time: %lu ns\n", producer_args[i].total_service_time);
-        printf("    Total spin time: %.2f ms\n", producer_args[i].total_spin_time / 1000000.0);
     }
 
-    printf("Consumer Statistics in second:\n");
-    uint64_t total_consumed = 0;
-    uint64_t total_service_time = 0;
-    uint64_t total_spin_time = 0;
-    double total_latency = 0;
     for (int i = 0; i < num_consumers; i++) {
-        total_consumed += consumer_args[i].total_consumed;
-        total_service_time += consumer_args[i].total_service_time;
-        total_spin_time += consumer_args[i].total_spin_time;
 
-        printf("  Consumer %d:\n", consumer_args[i].id);
-        printf("    Total consumed: %d\n", consumer_args[i].total_consumed);
-        printf("    Total running time: %.2f ms\n", consumer_args[i].total_running_time / 1000000.0);
-        printf("    Total service time: %.2f ms\n", consumer_args[i].total_service_time / 1000.0);
-        printf("    Total spin time: %.2f ms\n", consumer_args[i].total_spin_time / 1000000.0);
-
-        double avg_latency = 0;
-        for (int j = 0; j < consumer_args[i].total_consumed; j++) {
-            avg_latency += consumer_args[i].latencies[j];
+        for (uint64_t j = 0; j < consumer_args[i].total_consumed; j++) {
+            if (j % SAMPLES == 0) 
+                printf("%d,%lu,%lu,%lu,%lu,%lu\n",
+                    consumer_args[i].id,
+                    total_produced,
+                    consumer_args[i].total_consumed,
+                    consumer_args[i].total_spin_time,
+                    consumer_args[i].total_running_time,
+                    consumer_args[i].latencies[j]);
         }
-        avg_latency /= consumer_args[i].total_consumed;
-        avg_latency /= 1000.0;
-        total_latency += avg_latency;
-        printf("    Average latency: %.2f us\n", avg_latency);
     }
-
-    printf("\nTotal produced: %lu\n", total_produced);
-    printf("Total consumed: %lu\n", total_consumed);
-    printf("Difference: %lu\n", total_produced - total_consumed);
-    printf("Total service time: %.2f ms\n", total_service_time / 1000.0);
-    printf("Total spin time: %.2f ms\n", total_spin_time / 1000000.0);
-    printf("Average latency: %.2f us\n", total_latency / num_consumers);
     
 
     // clean up
