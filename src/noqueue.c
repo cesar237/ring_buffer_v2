@@ -223,6 +223,7 @@ int main(int argc, char *argv[]) {
         printf("    Total service time: %.2f ms\n", producer_args[i].total_service_time / 1000.0);
         printf("    Total spin time: %.2f ms\n", producer_args[i].total_spin_time / 1000000.0);
     }
+    printf("Total produced items: %lu\n", total_produced);
 
     // clean up
     for (int i = 0; i < num_producers; i++) {
